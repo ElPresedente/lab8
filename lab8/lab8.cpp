@@ -15,19 +15,14 @@ HINSTANCE hInst;                                // текущий экземпл
 // Отправить объявления функций, включенных в этот модуль кода:
 ATOM                MyRegisterClass(HINSTANCE hInstance);
 BOOL                InitInstance(HINSTANCE, int);
-LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
-INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
+LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM); 
+BOOL                Line(HDC hdc, POINT first, POINT last);
+ATOM                RegisterGameWndClass();
 
-BOOL Line(HDC hdc, POINT first, POINT last)
-{
-    MoveToEx(hdc, first.x, first.y, NULL); //сделать текущими координаты x1, y1
-    return LineTo(hdc, last.x, last.y);
-}
-
-int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
-                     _In_opt_ HINSTANCE hPrevInstance,
-                     _In_ LPWSTR    lpCmdLine,
-                     _In_ int       nCmdShow)
+int APIENTRY wWinMain(HINSTANCE hInstance,
+                      HINSTANCE hPrevInstance,
+                      LPWSTR    lpCmdLine,
+                      int       nCmdShow)
 {
     MyRegisterClass(hInstance);
 
@@ -93,41 +88,31 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
    return TRUE;
 }
 
-
-
 LRESULT CALLBACK GameFieldWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-    static GameField* data = NULL;
-    static int offsetX = NULL;
-    static int offsetY = NULL;
+    GameField* data = (GameField*)GetWindowLongPtr(hWnd, GWLP_USERDATA);
+    RECT r;
+    GetClientRect(hWnd, &r);
+    int offsetX = (r.bottom - r.top) / GAMEFIELD_XSIZE;
+    int offsetY = (r.bottom - r.top) / GAMEFIELD_YSIZE;
     switch (message)
     {
-        case WM_CREATE:
-        {
-            data = new GameField(GAMEFIELD_XSIZE, GAMEFIELD_YSIZE);
-            data->SetShip(Ship(POINT{ 0,0 }, POINT{ 1, 0 }, 2));
-            data->SetShip(Ship(POINT{ 2,2 }, POINT{ 4, 2 }, 3));
-            data->SetShip(Ship(POINT{ 5,6 }, POINT{ 5, 6 }, 1));
-            data->SetShip(Ship(POINT{ 0,2 }, POINT{ 0, 5 }, 4));
-            RECT r;
-            GetClientRect(hWnd, &r);
-            offsetX = (r.bottom - r.top) / GAMEFIELD_XSIZE;
-            offsetY = (r.bottom - r.top) / GAMEFIELD_YSIZE;
-        }
-        break;
         case WM_PAINT:
         {
-            if (data == NULL)
-                return DefWindowProc(hWnd, message, wParam, lParam);
             PAINTSTRUCT ps;
             HDC hdc = BeginPaint(hWnd, &ps);
-            RECT r;
-            HGDIOBJ original = SelectObject(hdc, GetStockObject(DC_PEN));
-            GetClientRect(hWnd, &r);
+            //рисуем рамочку
             Rectangle(hdc, r.left, r.top, r.right, r.bottom);
+            if (data == NULL)
+            {
+                EndPaint(hWnd, &ps);
+                return DefWindowProc(hWnd, message, wParam, lParam);
+            }
+            //сохраняем изначальную кисть
+            HGDIOBJ original = SelectObject(hdc, GetStockObject(DC_PEN));
             SelectObject(hdc, GetStockObject(DC_BRUSH));
             SetDCBrushColor(hdc, RGB(255, 0, 0));
-
+            //далее отрисовываем подстреленные клитки
             for (int y = 0; y < GAMEFIELD_YSIZE; y++)
             {
                 for (int x = 0; x < GAMEFIELD_XSIZE; x++)
@@ -138,15 +123,21 @@ LRESULT CALLBACK GameFieldWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM
                     }
                 }
             }
-
-            SetDCBrushColor(hdc, RGB(0, 0, 0));
-            SetDCPenColor(hdc, RGB(255, 255, 255));
-            for (int shipNum = 0; shipNum < data->shipsArray.size(); shipNum++)
+            //отрисовка кораблей
+            SetDCPenColor(hdc, RGB(255, 255, 255)); //рамка тайлов корабля и цвет кристика - белый
+            for (const Ship &currentShip : data->shipsArray)
             {
-                Ship currentShip = data->shipsArray.at(shipNum);
-
-                for (ShipTile a : currentShip.shipInfo)
+                //для этого мы и дублировали данные - просто перерисовываем клетки под нужды кораблей
+                for (const ShipTile &a : currentShip.shipInfo)
                 {
+                    if (currentShip.isDefeated) //если корабль полностью взорван - делаем его серее
+                    {
+                        SetDCBrushColor(hdc, RGB(100, 100, 100));
+                    }
+                    else 
+                    {
+                        SetDCBrushColor(hdc, RGB(0, 0, 0));
+                    }
                     Rectangle(hdc, a.x * offsetX, a.y * offsetY, (a.x + 1) * offsetX, (a.y + 1) * offsetY);
                     if (a.wasShooted)
                     {
@@ -157,8 +148,6 @@ LRESULT CALLBACK GameFieldWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM
                 }
 
             }
-
-
             SelectObject(hdc, original);
             //отрисовка "поля"
             for (int i = 0; i <= GAMEFIELD_XSIZE; i++)
@@ -185,9 +174,23 @@ LRESULT CALLBACK GameFieldWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM
             RedrawWindow(hWnd, NULL, NULL, RDW_INVALIDATE | RDW_NOERASE | RDW_NOFRAME);
         }
         break;
+        case WM_DESTROY:
+        {
+            delete data;
+            return DefWindowProc(hWnd, message, wParam, lParam);
+        }
+        break;
+        case CM_CONFIGURATE:
+        {
+            SetWindowLongPtr(hWnd, GWLP_USERDATA, lParam);
+            RedrawWindow(hWnd, NULL, NULL, RDW_INVALIDATE | RDW_NOERASE | RDW_NOFRAME);
+            return 0;
+        }
     }
     return DefWindowProc(hWnd, message, wParam, lParam);
 }
+
+
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
@@ -195,23 +198,28 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     {
     case WM_CREATE:
         {   
-            WNDCLASS wc;
-            wc.style = CS_HREDRAW | CS_VREDRAW;
-            wc.lpfnWndProc = GameFieldWndProc;
-            wc.cbClsExtra = 0;
-            wc.cbWndExtra = 0;
-            wc.hInstance = hInst;
-            wc.hIcon = NULL;
-            wc.hCursor = NULL;
-            wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
-            wc.lpszMenuName = NULL;
-            wc.lpszClassName = TEXT("GameFieldClass");
-            RegisterClass(&wc);
-            CreateWindow(TEXT("GameFieldClass"), TEXT("ggg"), WS_CHILD | WS_VISIBLE,
+            RegisterGameWndClass();
+            HWND playerWnd = CreateWindow(TEXT("GameFieldClass"), TEXT("ggg"), WS_CHILD | WS_VISIBLE,
                 100, 100,
                 200, 200,
                 hWnd, NULL,
                 hInst, NULL);
+            HWND botWnd = CreateWindow(TEXT("GameFieldClass"), TEXT("ggg2"), WS_CHILD | WS_VISIBLE,
+                400, 100,
+                200, 200,
+                hWnd, NULL,
+                hInst, NULL);
+            GameField* playerData = new GameField(GAMEFIELD_XSIZE, GAMEFIELD_YSIZE);
+            playerData->SetShip(Ship(POINT{ 0,0 }, POINT{ 1, 0 }, 2));
+            playerData->SetShip(Ship(POINT{ 2,2 }, POINT{ 4, 2 }, 3));
+            playerData->SetShip(Ship(POINT{ 5,6 }, POINT{ 5, 6 }, 1));
+            playerData->SetShip(Ship(POINT{ 0,2 }, POINT{ 0, 5 }, 4));
+            SendMessage(playerWnd, CM_CONFIGURATE, 0, (LPARAM)playerData);
+
+            GameField* botData = new GameField(GAMEFIELD_XSIZE, GAMEFIELD_YSIZE);
+            botData->SetShip(Ship(POINT{ 2, 3 }, POINT{ 2, 6 }, 4));
+            SendMessage(botWnd, CM_CONFIGURATE, 0, (LPARAM)botData);
+
         }
         break;
     case WM_COMMAND:
@@ -243,4 +251,26 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         return DefWindowProc(hWnd, message, wParam, lParam);
     }
     return 0;
+}
+
+
+BOOL Line(HDC hdc, POINT first, POINT last)
+{
+    MoveToEx(hdc, first.x, first.y, NULL); //сделать текущими координаты x1, y1
+    return LineTo(hdc, last.x, last.y);
+}
+ATOM RegisterGameWndClass()
+{
+    WNDCLASS wc;
+    wc.style = CS_HREDRAW | CS_VREDRAW;
+    wc.lpfnWndProc = GameFieldWndProc;
+    wc.cbClsExtra = 0;
+    wc.cbWndExtra = 0;
+    wc.hInstance = hInst;
+    wc.hIcon = NULL;
+    wc.hCursor = NULL;
+    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+    wc.lpszMenuName = NULL;
+    wc.lpszClassName = TEXT("GameFieldClass");
+    return RegisterClass(&wc);
 }

@@ -2,6 +2,9 @@
 
 #include "resource.h"
 #include <vector>
+
+#define CM_CONFIGURATE WM_APP //wParam - флаги поведения, lParam - указатель на GameField
+#define CM_NEXTROUND   (WM_APP + 1)
 struct Tile
 {
 	Tile()
@@ -30,6 +33,22 @@ struct Ship
 			int y = start.y + offY * i;
 			shipInfo.push_back(ShipTile(x, y));
 		}
+	}
+	void shoot(int x, int y)
+	{
+		int brokenParts = 0;
+		for (ShipTile& a : shipInfo)
+		{
+			if ((a.x == x) && (a.y == y))
+			{
+				//MessageBox(0, L"F", 0, 0);
+				a.wasShooted = true;
+			}
+			if (a.wasShooted)
+				brokenParts++;
+		}
+		if (brokenParts == size)
+			isDefeated = true;
 	}
 	std::vector<ShipTile> shipInfo;
 	int size;
@@ -60,16 +79,7 @@ public:
 		tilesArray.at(x + y * xSize).wasShooted = true;
 		for (Ship &currentShip : shipsArray)
 		{
-			for (ShipTile &a : currentShip.shipInfo)
-			{
-				if ((a.x == x) && (a.y == y))
-				{
-					//MessageBox(0, L"F", 0, 0);
-					a.wasShooted = true;
-					break;
-				}
-
-			}
+			currentShip.shoot(x, y);
 		}
 	}
 	int xSize;
