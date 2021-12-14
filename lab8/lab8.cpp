@@ -166,12 +166,29 @@ LRESULT CALLBACK GameFieldWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM
         {
             if(data == NULL)
                 return DefWindowProc(hWnd, message, wParam, lParam);
+            if(!data->playerCanInteract)
+                return DefWindowProc(hWnd, message, wParam, lParam);
             int xPos = GET_X_LPARAM(lParam);
             int yPos = GET_Y_LPARAM(lParam);
             int x = xPos / offsetX;
             int y = yPos / offsetY;
-            data->shoot(x, y);
+            if (!data->shoot(x, y))
+                return 0;
             RedrawWindow(hWnd, NULL, NULL, RDW_INVALIDATE | RDW_NOERASE | RDW_NOFRAME);
+            
+            HWND parent = GetParent(hWnd);
+            LPARAM coords = 0;
+            if (data->checkForLoosing())
+            {
+                coords = SET_X_LPARAM(x, GAMEFIELD_XSIZE);
+                coords = SET_Y_LPARAM(y, GAMEFIELD_XSIZE);
+            }
+            else 
+            {
+                coords = SET_X_LPARAM(x, coords);
+                coords = SET_Y_LPARAM(y, coords);
+            }
+            SendMessage(parent, CM_SHOOT, (WPARAM)hWnd, coords);
         }
         break;
         case WM_DESTROY:
@@ -186,6 +203,17 @@ LRESULT CALLBACK GameFieldWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM
             RedrawWindow(hWnd, NULL, NULL, RDW_INVALIDATE | RDW_NOERASE | RDW_NOFRAME);
             return 0;
         }
+        case CM_SHOOT:
+        {
+            int x, y;
+            do 
+            {
+                x = rand() % GAMEFIELD_XSIZE;
+                y = rand() % GAMEFIELD_YSIZE;
+            }while (!data->shoot(x, y)); //стреляем до попадиния
+            RedrawWindow(hWnd, NULL, NULL, RDW_INVALIDATE | RDW_NOERASE | RDW_NOFRAME);
+        }
+        break;
     }
     return DefWindowProc(hWnd, message, wParam, lParam);
 }
@@ -194,21 +222,57 @@ LRESULT CALLBACK GameFieldWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
+    static HWND playerWnd = NULL;
+    static HWND botWnd    = NULL;
     switch (message)
     {
+    case CM_SHOOT:
+        {
+            int x = GET_X_LPARAM(lParam);
+            int y = GET_Y_LPARAM(lParam);
+            
+            //TCHAR buf[100];
+            
+            HWND messageSender = (HWND)wParam;
+            //wsprintf(buf, TEXT("x: %d, y: %d"), x, y);
+            if (x == GAMEFIELD_XSIZE || y == GAMEFIELD_YSIZE)
+            {
+                if (messageSender == botWnd)
+                {
+                    MessageBox(hWnd, TEXT("You won!"), 0, 0);
+                }
+                else
+                {
+                    MessageBox(hWnd, TEXT("You lost!"), 0, 0);
+                }
+            }
+            else
+            {
+                if (messageSender == botWnd)
+                {
+                    SendMessage(playerWnd, CM_SHOOT, 0, 0);
+                    //MessageBox(0, buf, 0, 0);
+                }
+            }
+        }
+        break;
     case WM_CREATE:
         {   
+            SYSTEMTIME time;
+            GetSystemTime(&time);
+            srand(time.wMilliseconds);
             RegisterGameWndClass();
-            HWND playerWnd = CreateWindow(TEXT("GameFieldClass"), TEXT("ggg"), WS_CHILD | WS_VISIBLE,
+            playerWnd = CreateWindow(TEXT("GameFieldClass"), TEXT("ggg"), WS_CHILD | WS_VISIBLE,
                 100, 100,
                 200, 200,
                 hWnd, NULL,
                 hInst, NULL);
-            HWND botWnd = CreateWindow(TEXT("GameFieldClass"), TEXT("ggg2"), WS_CHILD | WS_VISIBLE,
+            botWnd = CreateWindow(TEXT("GameFieldClass"), TEXT("ggg2"), WS_CHILD | WS_VISIBLE,
                 400, 100,
                 200, 200,
                 hWnd, NULL,
                 hInst, NULL);
+
             GameField* playerData = new GameField(GAMEFIELD_XSIZE, GAMEFIELD_YSIZE);
             playerData->SetShip(Ship(POINT{ 0,0 }, POINT{ 1, 0 }, 2));
             playerData->SetShip(Ship(POINT{ 2,2 }, POINT{ 4, 2 }, 3));
@@ -216,16 +280,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             playerData->SetShip(Ship(POINT{ 0,2 }, POINT{ 0, 5 }, 4));
             SendMessage(playerWnd, CM_CONFIGURATE, 0, (LPARAM)playerData);
 
-            GameField* botData = new GameField(GAMEFIELD_XSIZE, GAMEFIELD_YSIZE);
+            GameField* botData = new GameField(GAMEFIELD_XSIZE, GAMEFIELD_YSIZE, true);
             botData->SetShip(Ship(POINT{ 2, 3 }, POINT{ 2, 6 }, 4));
             SendMessage(botWnd, CM_CONFIGURATE, 0, (LPARAM)botData);
-
         }
         break;
     case WM_COMMAND:
         {
             int wmId = LOWORD(wParam);
-            // Разобрать выбор в меню:
             switch (wmId)
             {
             case IDM_EXIT:

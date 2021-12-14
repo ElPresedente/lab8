@@ -3,8 +3,11 @@
 #include "resource.h"
 #include <vector>
 
-#define CM_CONFIGURATE WM_APP //wParam - флаги поведения, lParam - указатель на GameField
-#define CM_NEXTROUND   (WM_APP + 1)
+#define CM_CONFIGURATE WM_APP //lParam - указатель на GameField
+#define CM_SHOOT      (WM_APP + 1)
+
+#define SET_X_LPARAM(l, num) (num | (l & 0xffff)) 
+#define SET_Y_LPARAM(l, num) (num | ((l & 0xffff) << 16)) 
 struct Tile
 {
 	Tile()
@@ -57,14 +60,26 @@ struct Ship
 class GameField
 {
 public:
-	GameField(int xSize, int ySize)
+	GameField(int xSize, int ySize, bool playerCanInteract = false) 
+		: xSize(xSize), ySize(ySize), playerCanInteract(playerCanInteract)
 	{
 		for (int i = 0; i < xSize * ySize; i++)
 		{
 			tilesArray.push_back(Tile());
 		}
-		this->xSize = xSize;
-		this->ySize = ySize;
+	}
+	bool checkForLoosing()
+	{
+		bool isSomeShipAlive = false;
+		for (Ship& currentShip : shipsArray)
+		{
+			if (!currentShip.isDefeated)
+				isSomeShipAlive = true;
+		}
+		if (isSomeShipAlive)
+			return false;
+		else
+			return true;
 	}
 	void SetShip(Ship newShip)
 	{
@@ -74,16 +89,25 @@ public:
 	{
 		return tilesArray.at(x + y * xSize);
 	}
-	void shoot(int x, int y)
+	bool shoot(int x, int y)
 	{
-		tilesArray.at(x + y * xSize).wasShooted = true;
-		for (Ship &currentShip : shipsArray)
+		if (tilesArray.at(x + y * xSize).wasShooted)
 		{
-			currentShip.shoot(x, y);
+			return false;
 		}
+		else
+		{
+			tilesArray.at(x + y * xSize).wasShooted = true;
+			for (Ship& currentShip : shipsArray)
+			{
+				currentShip.shoot(x, y);
+			}
+		}
+		return true;
 	}
 	int xSize;
 	int ySize;
 	std::vector<Tile> tilesArray;
 	std::vector<Ship> shipsArray;
+	bool playerCanInteract;
 };
