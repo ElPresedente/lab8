@@ -126,8 +126,6 @@ LRESULT CALLBACK GameFieldWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM
             GetClientRect(hWnd, &r);
             Rectangle(hdc, r.left, r.top, r.right, r.bottom);
             SelectObject(hdc, GetStockObject(DC_BRUSH));
-            SetDCBrushColor(hdc, RGB(0, 0, 0));
-            SetDCPenColor(hdc, RGB(255, 255, 255));
             SetDCBrushColor(hdc, RGB(255, 0, 0));
 
             for (int y = 0; y < GAMEFIELD_YSIZE; y++)
@@ -141,6 +139,8 @@ LRESULT CALLBACK GameFieldWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM
                 }
             }
 
+            SetDCBrushColor(hdc, RGB(0, 0, 0));
+            SetDCPenColor(hdc, RGB(255, 255, 255));
             for (int shipNum = 0; shipNum < data->shipsArray.size(); shipNum++)
             {
                 Ship currentShip = data->shipsArray.at(shipNum);
@@ -148,6 +148,12 @@ LRESULT CALLBACK GameFieldWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM
                 for (ShipTile a : currentShip.shipInfo)
                 {
                     Rectangle(hdc, a.x * offsetX, a.y * offsetY, (a.x + 1) * offsetX, (a.y + 1) * offsetY);
+                    if (a.wasShooted)
+                    {
+                        //MessageBox(0, 0, 0, 0);
+                        Line(hdc, POINT{ a.x * offsetX + (offsetX / 6), a.y * offsetY + (offsetY / 6) }, POINT{ (a.x + 1) * offsetX - (offsetX / 6), (a.y + 1) * offsetY - (offsetY / 6) });
+                        Line(hdc, POINT{ a.x * offsetX + (offsetX / 6), (a.y + 1) * offsetY - (offsetY / 6) }, POINT{ (a.x + 1) * offsetX - (offsetX / 6), a.y * offsetY + (offsetY / 6) });
+                    }
                 }
 
             }

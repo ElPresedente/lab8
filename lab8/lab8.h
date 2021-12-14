@@ -58,6 +58,19 @@ public:
 	void shoot(int x, int y)
 	{
 		tilesArray.at(x + y * xSize).wasShooted = true;
+		for (Ship &currentShip : shipsArray)
+		{
+			for (ShipTile &a : currentShip.shipInfo)
+			{
+				if ((a.x == x) && (a.y == y))
+				{
+					//MessageBox(0, L"F", 0, 0);
+					a.wasShooted = true;
+					break;
+				}
+
+			}
+		}
 	}
 	int xSize;
 	int ySize;
