@@ -8,6 +8,21 @@
 
 #define SET_X_LPARAM(l, num) (num | (l & 0xffff)) 
 #define SET_Y_LPARAM(l, num) (num | ((l & 0xffff) << 16)) 
+
+#define PLAYER_TURN 0
+#define COMPUTER_TURN 1
+#define TILE_AVIALABLE 2
+#define SHOOT_TO_TILE 3
+#define SHIP_HIT 4
+#define SHIP_MISS 5
+#define CHANGE_TURN 6
+#define ALL_SHIPS_BROKEN 7
+#define DIALOG_OPEN 8
+#define TILE_CLICK 9
+#define APPLICATION_START 10
+
+typedef int Event;
+
 struct Tile
 {
 	Tile()

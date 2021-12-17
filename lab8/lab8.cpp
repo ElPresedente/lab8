@@ -6,11 +6,16 @@
 #include <iostream>
 #include <windowsx.h>
 
-#define GAMEFIELD_YSIZE 8
-#define GAMEFIELD_XSIZE 8
+#define GAMEFIELD_YSIZE 10
+#define GAMEFIELD_XSIZE 10
 
 // Глобальные переменные:
-HINSTANCE hInst;                                // текущий экземпляр
+HINSTANCE  hInst;                                // текущий экземпляр
+GameField* playerData;
+GameField* botData;
+HWND       playerWnd;
+HWND       botWnd;
+bool rulesStatements[11];
 
 // Отправить объявления функций, включенных в этот модуль кода:
 ATOM                MyRegisterClass(HINSTANCE hInstance);
@@ -18,6 +23,12 @@ BOOL                InitInstance(HINSTANCE, int);
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM); 
 BOOL                Line(HDC hdc, POINT first, POINT last);
 ATOM                RegisterGameWndClass();
+void                EmitEvent(Event eventNum, int x = 0, int y = 0);
+
+void checkTile(int x, int y);
+void checkRandomTile();
+void checkShipHit(int x, int y);
+void checkCurrentPlayerShips();
 
 int APIENTRY wWinMain(HINSTANCE hInstance,
                       HINSTANCE hPrevInstance,
@@ -26,6 +37,7 @@ int APIENTRY wWinMain(HINSTANCE hInstance,
 {
     MyRegisterClass(hInstance);
 
+    memset(rulesStatements, false, 11 * sizeof(bool));
     // Выполнить инициализацию приложения:
     if (!InitInstance (hInstance, nCmdShow))
     {
@@ -112,7 +124,7 @@ LRESULT CALLBACK GameFieldWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM
             HGDIOBJ original = SelectObject(hdc, GetStockObject(DC_PEN));
             SelectObject(hdc, GetStockObject(DC_BRUSH));
             SetDCBrushColor(hdc, RGB(255, 0, 0));
-            //далее отрисовываем подстреленные клитки
+            //далее отрисовываем подстреленные бипки
             for (int y = 0; y < GAMEFIELD_YSIZE; y++)
             {
                 for (int x = 0; x < GAMEFIELD_XSIZE; x++)
@@ -138,12 +150,24 @@ LRESULT CALLBACK GameFieldWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM
                     {
                         SetDCBrushColor(hdc, RGB(0, 0, 0));
                     }
-                    Rectangle(hdc, a.x * offsetX, a.y * offsetY, (a.x + 1) * offsetX, (a.y + 1) * offsetY);
-                    if (a.wasShooted)
+                    if (data->playerCanInteract && false)
                     {
-                        //MessageBox(0, 0, 0, 0);
-                        Line(hdc, POINT{ a.x * offsetX + (offsetX / 6), a.y * offsetY + (offsetY / 6) }, POINT{ (a.x + 1) * offsetX - (offsetX / 6), (a.y + 1) * offsetY - (offsetY / 6) });
-                        Line(hdc, POINT{ a.x * offsetX + (offsetX / 6), (a.y + 1) * offsetY - (offsetY / 6) }, POINT{ (a.x + 1) * offsetX - (offsetX / 6), a.y * offsetY + (offsetY / 6) });
+                        if (a.wasShooted)
+                        {
+                            Rectangle(hdc, a.x * offsetX, a.y * offsetY, (a.x + 1) * offsetX, (a.y + 1) * offsetY);
+                            Line(hdc, POINT{ a.x * offsetX + (offsetX / 6), a.y * offsetY + (offsetY / 6) }, POINT{ (a.x + 1) * offsetX - (offsetX / 6), (a.y + 1) * offsetY - (offsetY / 6) });
+                            Line(hdc, POINT{ a.x * offsetX + (offsetX / 6), (a.y + 1) * offsetY - (offsetY / 6) }, POINT{ (a.x + 1) * offsetX - (offsetX / 6), a.y * offsetY + (offsetY / 6) });
+                        }
+                    }
+                    else
+                    {
+                        Rectangle(hdc, a.x * offsetX, a.y * offsetY, (a.x + 1) * offsetX, (a.y + 1) * offsetY);
+                        if (a.wasShooted)
+                        {
+                            //MessageBox(0, 0, 0, 0);
+                            Line(hdc, POINT{ a.x * offsetX + (offsetX / 6), a.y * offsetY + (offsetY / 6) }, POINT{ (a.x + 1) * offsetX - (offsetX / 6), (a.y + 1) * offsetY - (offsetY / 6) });
+                            Line(hdc, POINT{ a.x * offsetX + (offsetX / 6), (a.y + 1) * offsetY - (offsetY / 6) }, POINT{ (a.x + 1) * offsetX - (offsetX / 6), a.y * offsetY + (offsetY / 6) });
+                        }
                     }
                 }
 
@@ -172,22 +196,10 @@ LRESULT CALLBACK GameFieldWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM
             int yPos = GET_Y_LPARAM(lParam);
             int x = xPos / offsetX;
             int y = yPos / offsetY;
-            if (!data->shoot(x, y))
-                return 0;
-            RedrawWindow(hWnd, NULL, NULL, RDW_INVALIDATE | RDW_NOERASE | RDW_NOFRAME);
-            
             HWND parent = GetParent(hWnd);
             LPARAM coords = 0;
-            if (data->checkForLoosing())
-            {
-                coords = SET_X_LPARAM(x, GAMEFIELD_XSIZE);
-                coords = SET_Y_LPARAM(y, GAMEFIELD_XSIZE);
-            }
-            else 
-            {
-                coords = SET_X_LPARAM(x, coords);
-                coords = SET_Y_LPARAM(y, coords);
-            }
+            coords = SET_X_LPARAM(x, coords);
+            coords = SET_Y_LPARAM(y, coords);
             SendMessage(parent, CM_SHOOT, (WPARAM)hWnd, coords);
         }
         break;
@@ -203,57 +215,21 @@ LRESULT CALLBACK GameFieldWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM
             RedrawWindow(hWnd, NULL, NULL, RDW_INVALIDATE | RDW_NOERASE | RDW_NOFRAME);
             return 0;
         }
-        case CM_SHOOT:
-        {
-            int x, y;
-            do 
-            {
-                x = rand() % GAMEFIELD_XSIZE;
-                y = rand() % GAMEFIELD_YSIZE;
-            }while (!data->shoot(x, y)); //стреляем до попадиния
-            RedrawWindow(hWnd, NULL, NULL, RDW_INVALIDATE | RDW_NOERASE | RDW_NOFRAME);
-        }
         break;
     }
     return DefWindowProc(hWnd, message, wParam, lParam);
 }
 
-
-
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-    static HWND playerWnd = NULL;
-    static HWND botWnd    = NULL;
     switch (message)
     {
     case CM_SHOOT:
         {
             int x = GET_X_LPARAM(lParam);
             int y = GET_Y_LPARAM(lParam);
-            
-            //TCHAR buf[100];
-            
             HWND messageSender = (HWND)wParam;
-            //wsprintf(buf, TEXT("x: %d, y: %d"), x, y);
-            if (x == GAMEFIELD_XSIZE || y == GAMEFIELD_YSIZE)
-            {
-                if (messageSender == botWnd)
-                {
-                    MessageBox(hWnd, TEXT("You won!"), 0, 0);
-                }
-                else
-                {
-                    MessageBox(hWnd, TEXT("You lost!"), 0, 0);
-                }
-            }
-            else
-            {
-                if (messageSender == botWnd)
-                {
-                    SendMessage(playerWnd, CM_SHOOT, 0, 0);
-                    //MessageBox(0, buf, 0, 0);
-                }
-            }
+            EmitEvent(TILE_CLICK, x, y);
         }
         break;
     case WM_CREATE:
@@ -264,25 +240,28 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             RegisterGameWndClass();
             playerWnd = CreateWindow(TEXT("GameFieldClass"), TEXT("ggg"), WS_CHILD | WS_VISIBLE,
                 100, 100,
-                200, 200,
+                300, 300,
                 hWnd, NULL,
                 hInst, NULL);
             botWnd = CreateWindow(TEXT("GameFieldClass"), TEXT("ggg2"), WS_CHILD | WS_VISIBLE,
-                400, 100,
-                200, 200,
+                500, 100,
+                300, 300,
                 hWnd, NULL,
                 hInst, NULL);
 
-            GameField* playerData = new GameField(GAMEFIELD_XSIZE, GAMEFIELD_YSIZE);
+            playerData = new GameField(GAMEFIELD_XSIZE, GAMEFIELD_YSIZE);
             playerData->SetShip(Ship(POINT{ 0,0 }, POINT{ 1, 0 }, 2));
             playerData->SetShip(Ship(POINT{ 2,2 }, POINT{ 4, 2 }, 3));
             playerData->SetShip(Ship(POINT{ 5,6 }, POINT{ 5, 6 }, 1));
             playerData->SetShip(Ship(POINT{ 0,2 }, POINT{ 0, 5 }, 4));
             SendMessage(playerWnd, CM_CONFIGURATE, 0, (LPARAM)playerData);
 
-            GameField* botData = new GameField(GAMEFIELD_XSIZE, GAMEFIELD_YSIZE, true);
+            botData = new GameField(GAMEFIELD_XSIZE, GAMEFIELD_YSIZE, true);
+            botData->SetShip(Ship(POINT{ 0, 0 }, POINT{ 1, 0 }, 2));
+            botData->SetShip(Ship(POINT{ 3, 1 }, POINT{ 5, 1 }, 3));
             botData->SetShip(Ship(POINT{ 2, 3 }, POINT{ 2, 6 }, 4));
             SendMessage(botWnd, CM_CONFIGURATE, 0, (LPARAM)botData);
+            EmitEvent(APPLICATION_START);
         }
         break;
     case WM_COMMAND:
@@ -335,4 +314,167 @@ ATOM RegisterGameWndClass()
     wc.lpszMenuName = NULL;
     wc.lpszClassName = TEXT("GameFieldClass");
     return RegisterClass(&wc);
+}
+
+void EmitEvent(Event eventNum, int x, int y)
+{
+    rulesStatements[eventNum] = true;
+    if (rulesStatements[APPLICATION_START])
+    {
+        // MessageBox(0, L"Start", 0, 0);
+        rulesStatements[APPLICATION_START] = false;
+        rulesStatements[PLAYER_TURN] = true;
+        return;
+    }
+    if (rulesStatements[PLAYER_TURN] && rulesStatements[CHANGE_TURN])
+    {
+        // MessageBox(0, L"Change turn to comp", 0, 0);
+        rulesStatements[PLAYER_TURN] = false;
+        rulesStatements[CHANGE_TURN] = false;
+        EmitEvent(COMPUTER_TURN);
+    }
+    if (rulesStatements[COMPUTER_TURN] && rulesStatements[CHANGE_TURN])
+    {
+        // MessageBox(0, L"Change turn to player", 0, 0);
+        rulesStatements[COMPUTER_TURN] = false;
+        rulesStatements[CHANGE_TURN] = false;
+        rulesStatements[PLAYER_TURN] = true;
+    }
+    if (rulesStatements[PLAYER_TURN] && rulesStatements[TILE_CLICK])
+    {
+        // MessageBox(0, L"Player clickk", 0, 0);
+        rulesStatements[TILE_CLICK] = false;
+        checkTile(x, y);
+        return;
+    }
+    if (rulesStatements[TILE_AVIALABLE])
+    {
+        // MessageBox(0, L"Chosen tile avialable", 0, 0);
+        rulesStatements[TILE_AVIALABLE] = false;
+        rulesStatements[SHOOT_TO_TILE] = true; 
+        checkShipHit(x, y);
+        return;
+    }
+    if (rulesStatements[SHOOT_TO_TILE] && rulesStatements[SHIP_HIT])
+    {
+        // MessageBox(0, L"Hit", 0, 0);
+        rulesStatements[SHOOT_TO_TILE] = false;
+        rulesStatements[SHIP_HIT] = false;
+        checkCurrentPlayerShips();
+        return;
+    }
+    if (rulesStatements[SHOOT_TO_TILE] && rulesStatements[SHIP_MISS])
+    {
+        // MessageBox(0, L"miss", 0, 0);
+        rulesStatements[SHOOT_TO_TILE] = false;
+        rulesStatements[SHIP_MISS] = false;
+        EmitEvent(CHANGE_TURN, x, y);
+        return;
+    }
+    if (rulesStatements[ALL_SHIPS_BROKEN] && rulesStatements[PLAYER_TURN])
+    {
+        rulesStatements[ALL_SHIPS_BROKEN] = false;
+        rulesStatements[PLAYER_TURN] = false;
+        MessageBox(0, TEXT("Игрок выиграл"), 0, 0);
+        return;
+    }
+    if (rulesStatements[ALL_SHIPS_BROKEN] && rulesStatements[COMPUTER_TURN])
+    {
+        rulesStatements[ALL_SHIPS_BROKEN] = false;
+        rulesStatements[COMPUTER_TURN] = false;
+        MessageBox(0, TEXT("Компьютер выиграл"), 0, 0);
+        return;
+    }
+    if (rulesStatements[COMPUTER_TURN])
+    {
+        // MessageBox(0, L"Comp randomly shoot", 0, 0);
+        checkRandomTile();
+        return;
+    }
+}
+
+void checkTile(int x, int y)
+{
+    bool isPlayer = rulesStatements[PLAYER_TURN];
+    GameField* field;
+    if (isPlayer)
+    {
+        field = botData;
+    }
+    else
+    {
+        field = playerData;
+    }
+    if (field->shoot(x, y))
+    {
+        EmitEvent(TILE_AVIALABLE, x, y);
+    }
+    if (isPlayer)
+    {
+        RedrawWindow(botWnd, NULL, NULL, RDW_INVALIDATE | RDW_NOERASE | RDW_NOFRAME);
+    }
+    else
+    {
+        RedrawWindow(playerWnd, NULL, NULL, RDW_INVALIDATE | RDW_NOERASE | RDW_NOFRAME);
+    }
+}
+
+void checkRandomTile()
+{
+    GameField* field;
+    field = playerData;
+    int x, y;
+    do
+    {
+        x = rand() % GAMEFIELD_XSIZE;
+        y = rand() % GAMEFIELD_YSIZE;
+    } while (!field->shoot(x, y));
+    RedrawWindow(playerWnd, NULL, NULL, RDW_INVALIDATE | RDW_NOERASE | RDW_NOFRAME);
+    EmitEvent(TILE_AVIALABLE, x, y);
+}
+
+void checkShipHit(int x, int y)
+{
+    GameField* field;
+    if (rulesStatements[PLAYER_TURN])
+    {
+        field = botData;
+    }
+    else
+    {
+        field = playerData;
+    }
+    for (Ship& ship : field->shipsArray)
+    {
+        for (ShipTile& tile : ship.shipInfo)
+        {
+            if (tile.x == x && tile.y == y)
+            {
+                EmitEvent(SHIP_HIT, x, y);
+                return;
+            }
+        }
+    }
+    EmitEvent(SHIP_MISS, x, y);
+}
+
+void checkCurrentPlayerShips()
+{
+    GameField* field;
+    if (rulesStatements[PLAYER_TURN])
+    {
+        field = botData;
+    }
+    else
+    {
+        field = playerData;
+    }
+    bool atLeastOneAlive = false;
+    for (Ship& ship : field->shipsArray)
+    {
+        if (ship.isDefeated == false)
+            atLeastOneAlive = true;
+    }
+    if (!atLeastOneAlive)
+        EmitEvent(ALL_SHIPS_BROKEN);
 }
